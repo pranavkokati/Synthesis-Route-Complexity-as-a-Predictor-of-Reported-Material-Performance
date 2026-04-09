@@ -1,0 +1,7 @@
+feature,feature_label,semi_partial_r2,r2_without_feature
+precursor_diversity,Precursor Diversity (# elements),0.03227380550220971,0.11045138762553897
+max_temperature_C,Max Temperature (°C),0.025001994201024225,0.11772319892672445
+total_time_h,Total Heating Time (h),0.011470832931123498,0.13125436019662517
+target_n_elements,target_n_elements,0.002706501904119807,0.14001869122362887
+n_steps,Number of Steps,0.000419339131068619,0.14230585399668005
+precursor_count,Precursor Count,4.0200833018366744e-05,0.1426849922947303

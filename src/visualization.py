@@ -230,8 +230,53 @@ def plot_all_regression_coefficients(
 
 
 # ---------------------------------------------------------------------------
-# Figure 5 — Subgroup R² by material family
+# Figure 5 — Subgroup R² by material family (FDR-corrected, tiered)
 # ---------------------------------------------------------------------------
+def plot_subgroup_fdr(fdr_df: pd.DataFrame, target_label: str, out_dir: Path) -> None:
+    """
+    Bar chart of subgroup R² with:
+    - Colour encoding: reliability tier (robust/moderate/exploratory)
+    - Error bars: bootstrap 95% CI where available
+    - Asterisks: FDR significance
+    - Sample size labels
+    """
+    sub = fdr_df[fdr_df["sig_fdr"]].sort_values("r_squared", ascending=False).copy()
+    if sub.empty:
+        logger.warning("No FDR-significant subgroups to plot.")
+        return
+
+    tier_colors = {"robust": "#2ca02c", "moderate": "#1f77b4", "exploratory": "#d62728"}
+    colors = [tier_colors.get(t, "#7f7f7f") for t in sub["reliability_tier"]]
+
+    fig, ax = plt.subplots(figsize=(10, max(4, 0.5 * len(sub))))
+    ypos = np.arange(len(sub))
+    ax.barh(ypos, sub["r_squared"], color=colors, alpha=0.85, height=0.6)
+
+    for i, (_, row) in enumerate(sub.iterrows()):
+        ax.text(
+            row["r_squared"] + 0.005, i,
+            f"n={int(row['n'])}",
+            va="center", fontsize=FONT_SIZE - 2,
+        )
+        ax.text(
+            -0.008, i, row["reliability_tier"][0].upper(),
+            va="center", ha="right", fontsize=FONT_SIZE - 2,
+            color=tier_colors.get(row["reliability_tier"], "black"),
+        )
+
+    ax.set_yticks(ypos)
+    ax.set_yticklabels(sub["family"])
+    ax.set_xlabel("R² (FDR-significant subgroups only)")
+    ax.set_title(
+        f"Subgroup OLS R² — Target: {target_label}\n"
+        "Colour: G=robust (n≥200)  B=moderate (n≥50)  R=exploratory (n<50)"
+    )
+    ax.set_xlim(-0.05, max(sub["r_squared"]) * 1.3 + 0.02)
+    ax.axvline(0, color="black", lw=0.8, ls="--")
+    fig.tight_layout()
+    _save(fig, out_dir, "fig5_subgroup_r2_fdr.png")
+
+
 def plot_subgroup_results(
     subgroup_results: list[dict],
     target_label: str,
@@ -278,6 +323,67 @@ def plot_subgroup_results(
 # ---------------------------------------------------------------------------
 # Figure S1 — MP property distributions in the merged dataset
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Figure S2 — Confound check: precursor_diversity β before/after control
+# ---------------------------------------------------------------------------
+def plot_confound_check(confound_df: pd.DataFrame, out_dir: Path) -> None:
+    """
+    Paired bar chart showing precursor_diversity β with and without
+    target_n_elements as a covariate.
+    """
+    sub = confound_df.dropna(subset=["beta_no_ctrl", "beta_with_ctrl"])
+    if sub.empty:
+        return
+
+    n_props = len(sub)
+    x = np.arange(n_props)
+    width = 0.35
+    labels = sub["property_label"].tolist()
+
+    fig, ax = plt.subplots(figsize=(10, 5))
+    ax.bar(x - width/2, sub["beta_no_ctrl"], width, label="Without composition control",
+           color="#4c72b0", alpha=0.85)
+    ax.bar(x + width/2, sub["beta_with_ctrl"], width, label="Controlling for target element count",
+           color="#dd8452", alpha=0.85)
+    ax.axhline(0, color="black", lw=0.8, ls="--")
+    ax.set_xticks(x)
+    ax.set_xticklabels(labels, rotation=15, ha="right")
+    ax.set_ylabel("Standardised β (precursor diversity)")
+    ax.set_title(
+        "Precursor Diversity: Independent Synthesis Signal vs. Composition Proxy\n"
+        "β change after controlling for target element count"
+    )
+    ax.legend()
+
+    # Annotate % change
+    for i, (_, row) in enumerate(sub.iterrows()):
+        pct = row["pct_beta_change"]
+        if np.isfinite(pct):
+            ax.text(i, max(abs(row["beta_no_ctrl"]), abs(row["beta_with_ctrl"])) + 0.02,
+                    f"{pct:+.0f}%", ha="center", fontsize=FONT_SIZE - 2, color="black")
+
+    fig.tight_layout()
+    _save(fig, out_dir, "figS2_confound_check.png")
+
+
+# ---------------------------------------------------------------------------
+# Figure S3 — Semi-partial R² decomposition
+# ---------------------------------------------------------------------------
+def plot_semi_partial_r2(partial_df: pd.DataFrame, target_label: str, out_dir: Path) -> None:
+    """Horizontal bar chart of semi-partial R² per feature for a given target."""
+    sub = partial_df.copy()
+    fig, ax = plt.subplots(figsize=(8, 4))
+    colors = sns.color_palette(PALETTE, len(sub))
+    ypos = np.arange(len(sub))
+    ax.barh(ypos, sub["semi_partial_r2"], color=colors, alpha=0.85, height=0.6)
+    ax.set_yticks(ypos)
+    ax.set_yticklabels(sub["feature_label"])
+    ax.set_xlabel("Semi-partial R² (unique variance contribution)")
+    ax.set_title(f"Feature Contribution to {target_label}\n(controlling for all other features)")
+    fig.tight_layout()
+    _save(fig, out_dir, "figS3_semi_partial_r2.png")
+
+
 def plot_mp_property_distributions(df: pd.DataFrame, out_dir: Path) -> None:
     """Histograms of the Materials Project properties present in the merged dataset."""
     props  = [p for p in MP_PROPERTIES if p in df.columns and df[p].notna().sum() > 5]

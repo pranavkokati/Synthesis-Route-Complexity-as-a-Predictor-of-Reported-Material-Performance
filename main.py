@@ -235,6 +235,21 @@ def main() -> None:
         pd.DataFrame(sg_rows).to_csv(res_dir / "subgroup_results.csv", index=False)
 
     # ------------------------------------------------------------------
+    # Step 7b — Pre-manuscript diagnostics
+    # ------------------------------------------------------------------
+    logger.info("=" * 60)
+    logger.info("STEP 7b  Pre-manuscript diagnostics")
+    logger.info("=" * 60)
+
+    from src.diagnostics import run_all_diagnostics
+    diag_dir = res_dir / "diagnostics"
+    diag = run_all_diagnostics(
+        df_merged,
+        out_dir=diag_dir,
+        primary_target=primary_target or "band_gap",
+    )
+
+    # ------------------------------------------------------------------
     # Step 8 — Figures
     # ------------------------------------------------------------------
     logger.info("=" * 60)
@@ -247,7 +262,10 @@ def main() -> None:
         plot_property_scatter,
         plot_all_regression_coefficients,
         plot_subgroup_results,
+        plot_subgroup_fdr,
         plot_mp_property_distributions,
+        plot_confound_check,
+        plot_semi_partial_r2,
     )
 
     plot_feature_distributions(df, fig_dir)
@@ -262,7 +280,20 @@ def main() -> None:
             out_dir=fig_dir,
         )
 
+    if not diag["fdr_df"].empty:
+        plot_subgroup_fdr(
+            diag["fdr_df"],
+            target_label=MP_PROPERTIES.get(primary_target or "band_gap", "Band Gap (eV)"),
+            out_dir=fig_dir,
+        )
+
     plot_mp_property_distributions(df_merged, fig_dir)
+    plot_confound_check(diag["confound_df"], fig_dir)
+    plot_semi_partial_r2(
+        diag["partial_df"],
+        target_label=MP_PROPERTIES.get(primary_target or "band_gap", "Band Gap (eV)"),
+        out_dir=fig_dir,
+    )
 
     # ------------------------------------------------------------------
     # Final summary

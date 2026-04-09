@@ -1,12 +1,21 @@
 """
 Statistical analysis: multivariate regression, correlation, and subgroup tests.
 
-Analyses performed:
-    1. Multivariate OLS: perf_norm ~ complexity features
-    2. Pearson correlation matrix across features + performance
-    3. Per-metric-class subgroup regressions
-    4. Per-element-family subgroup regressions (based on dominant cation)
-    5. VIF (variance inflation factors) for multicollinearity check
+For each Materials Project property (band_gap, formation_energy_per_atom,
+energy_above_hull, density) a separate OLS model is fit:
+
+    property ~ precursor_count + max_temperature_C + total_time_h
+               + n_steps + precursor_diversity
+
+All features are z-score standardised before regression to yield comparable
+standardised coefficients.  HC3 heteroscedasticity-robust standard errors
+are used throughout.
+
+Analyses:
+    1. Per-property multivariate OLS
+    2. Pearson correlation matrix (features + all MP properties)
+    3. VIF diagnostics
+    4. Subgroup OLS by dominant cation family
 """
 
 import logging
@@ -23,224 +32,196 @@ from src.feature_extractor import FEATURE_COLS, FEATURE_LABELS
 
 logger = logging.getLogger(__name__)
 
-REGRESSION_TARGET = "perf_norm"
+# Materials Project properties used as performance / outcome variables
+MP_PROPERTIES = {
+    "band_gap":                   "Band Gap (eV)",
+    "formation_energy_per_atom":  "Formation Energy (eV/atom)",
+    "energy_above_hull":          "Energy Above Hull (eV/atom)",
+    "density":                    "Crystal Density (g/cm³)",
+}
 
 
-def _clean_regression_data(
+def _clean_for_regression(
     df: pd.DataFrame,
     features: list[str],
-    target: str = REGRESSION_TARGET,
+    target: str,
     winsorise: float = 0.01,
 ) -> pd.DataFrame:
     """
-    Return a clean subset: rows where all features and the target are finite,
-    with optional winsorisation of the target at ``winsorise`` tails.
+    Return rows where all *features* and *target* are finite, with optional
+    Winsorisation of the target at ``winsorise`` tails.
     """
-    cols = features + [target]
-    sub = df[cols].replace([np.inf, -np.inf], np.nan).dropna()
-
-    if winsorise > 0:
+    sub = df[features + [target]].replace([np.inf, -np.inf], np.nan).dropna()
+    if winsorise > 0 and len(sub) > 20:
         lo = sub[target].quantile(winsorise)
         hi = sub[target].quantile(1.0 - winsorise)
         sub = sub[(sub[target] >= lo) & (sub[target] <= hi)]
-
     return sub
 
 
 def run_ols(
     df: pd.DataFrame,
+    target: str,
     features: Optional[list[str]] = None,
-    target: str = REGRESSION_TARGET,
-    label: str = "Full dataset",
+    label: str = "",
 ) -> dict:
     """
-    Fit an OLS model: *target* ~ *features* (with intercept).
-
-    Returns a dict with keys:
-        model, summary_df, r_squared, adj_r_squared, n, label
+    Fit OLS with standardised features.  Returns a result dict with keys:
+    model, summary_df, r_squared, adj_r_squared, n, label, target.
     """
     if features is None:
         features = FEATURE_COLS
 
-    sub = _clean_regression_data(df, features, target)
+    sub = _clean_for_regression(df, features, target)
     n = len(sub)
 
     if n < 20:
-        logger.warning("Skipping OLS for '%s': only %d observations.", label, n)
-        return {"label": label, "n": n, "r_squared": np.nan, "model": None, "summary_df": pd.DataFrame()}
+        logger.warning(
+            "Skipping OLS for target='%s' label='%s': only %d observations.",
+            target, label, n,
+        )
+        return {
+            "label": label, "target": target, "n": n,
+            "r_squared": np.nan, "adj_r_squared": np.nan,
+            "model": None, "summary_df": pd.DataFrame(),
+        }
 
-    # Standardise features to reduce condition number before fitting
+    # Standardise features to reduce condition number
     X_raw = sub[features].astype(float)
     X_mean = X_raw.mean()
-    X_std = X_raw.std().replace(0, 1)
-    X_scaled = (X_raw - X_mean) / X_std
-    X = sm.add_constant(X_scaled, has_constant="add")
-    y = sub[target].astype(float)
+    X_std  = X_raw.std().replace(0, 1.0)
+    X_sc   = (X_raw - X_mean) / X_std
+    X      = sm.add_constant(X_sc, has_constant="add")
+    y      = sub[target].astype(float)
 
-    model = sm.OLS(y, X).fit(cov_type="HC3")  # heteroscedasticity-robust SEs
+    model = sm.OLS(y, X).fit(cov_type="HC3")
 
     coef = model.params
-    se = model.bse
-    pval = model.pvalues
-    ci = model.conf_int()
+    ci   = model.conf_int()
 
-    summary_df = pd.DataFrame(
-        {
-            "feature": coef.index,
-            "coefficient": coef.values,
-            "std_error": se.values,
-            "p_value": pval.values,
-            "ci_lower": ci[0].values,
-            "ci_upper": ci[1].values,
-        }
-    )
-    summary_df["significant"] = summary_df["p_value"] < 0.05
+    summary_df = pd.DataFrame({
+        "feature":       coef.index,
+        "coefficient":   coef.values,
+        "std_error":     model.bse.values,
+        "p_value":       model.pvalues.values,
+        "ci_lower":      ci[0].values,
+        "ci_upper":      ci[1].values,
+    })
+    summary_df["significant"]   = summary_df["p_value"] < 0.05
     summary_df["feature_label"] = summary_df["feature"].map(
         {**FEATURE_LABELS, "const": "Intercept"}
     ).fillna(summary_df["feature"])
+    summary_df["target"] = target
 
     logger.info(
-        "[%s] n=%d  R²=%.4f  adj-R²=%.4f",
-        label,
-        n,
-        model.rsquared,
-        model.rsquared_adj,
+        "[%s | target=%s] n=%d  R²=%.4f  adj-R²=%.4f",
+        label, target, n, model.rsquared, model.rsquared_adj,
     )
 
     return {
-        "label": label,
-        "n": n,
-        "r_squared": model.rsquared,
-        "adj_r_squared": model.rsquared_adj,
-        "model": model,
-        "summary_df": summary_df,
+        "label":        label,
+        "target":       target,
+        "n":            n,
+        "r_squared":    model.rsquared,
+        "adj_r_squared":model.rsquared_adj,
+        "model":        model,
+        "summary_df":   summary_df,
     }
+
+
+def run_all_property_regressions(
+    df: pd.DataFrame,
+    features: Optional[list[str]] = None,
+) -> dict[str, dict]:
+    """
+    Run OLS for each MP property.
+
+    Returns a dict keyed by property name.
+    """
+    if features is None:
+        features = FEATURE_COLS
+    results = {}
+    for prop in MP_PROPERTIES:
+        if prop not in df.columns:
+            continue
+        results[prop] = run_ols(df, target=prop, features=features, label="Full dataset")
+    return results
 
 
 def compute_correlation_matrix(
     df: pd.DataFrame,
     features: Optional[list[str]] = None,
-    target: str = REGRESSION_TARGET,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
-    Compute Pearson correlation matrix and associated p-value matrix.
-
-    Returns (corr_matrix, pval_matrix) as DataFrames.
+    Pearson correlation matrix over features + all available MP properties.
+    Returns (corr_df, pval_df).
     """
     if features is None:
         features = FEATURE_COLS
-    cols = features + [target]
+    mp_cols = [p for p in MP_PROPERTIES if p in df.columns]
+    cols = features + mp_cols
+
     sub = df[cols].replace([np.inf, -np.inf], np.nan).dropna()
+    n_c = len(cols)
+    corr_v = np.eye(n_c)
+    pval_v = np.zeros((n_c, n_c))
 
-    n_cols = len(cols)
-    corr_vals = np.eye(n_cols)
-    pval_vals = np.zeros((n_cols, n_cols))
-
-    for i in range(n_cols):
-        for j in range(n_cols):
+    for i in range(n_c):
+        for j in range(n_c):
             if i == j:
                 continue
             r, p = pearsonr(sub.iloc[:, i], sub.iloc[:, j])
-            corr_vals[i, j] = r
-            pval_vals[i, j] = p
+            corr_v[i, j] = r
+            pval_v[i, j] = p
 
-    col_labels = [FEATURE_LABELS.get(c, c) for c in cols]
-    corr_df = pd.DataFrame(corr_vals, index=col_labels, columns=col_labels)
-    pval_df = pd.DataFrame(pval_vals, index=col_labels, columns=col_labels)
+    labels = [FEATURE_LABELS.get(c, MP_PROPERTIES.get(c, c)) for c in cols]
+    corr_df = pd.DataFrame(corr_v, index=labels, columns=labels)
+    pval_df = pd.DataFrame(pval_v, index=labels, columns=labels)
     return corr_df, pval_df
 
 
 def compute_vif(df: pd.DataFrame, features: Optional[list[str]] = None) -> pd.DataFrame:
-    """Compute variance inflation factors for the feature set."""
+    """Variance inflation factors for the feature set."""
     if features is None:
         features = FEATURE_COLS
     sub = df[features].replace([np.inf, -np.inf], np.nan).dropna().astype(float)
     X = sm.add_constant(sub)
-    vif_data = pd.DataFrame(
-        {
-            "feature": X.columns,
-            "vif": [variance_inflation_factor(X.values, i) for i in range(X.shape[1])],
-        }
-    )
-    return vif_data[vif_data["feature"] != "const"]
+    rows = []
+    for i, col in enumerate(X.columns):
+        if col == "const":
+            continue
+        rows.append({"feature": col, "vif": variance_inflation_factor(X.values, i)})
+    return pd.DataFrame(rows)
 
 
-def subgroup_regression_by_metric(df: pd.DataFrame) -> list[dict]:
-    """Run OLS within each extracted metric class."""
-    results = []
-    for metric in sorted(df["metric_name"].dropna().unique()):
-        sub = df[df["metric_name"] == metric]
-        res = run_ols(sub, label=f"metric={metric}")
-        res["group_key"] = metric
-        results.append(res)
-    return results
-
-
-def subgroup_regression_by_family(df: pd.DataFrame) -> list[dict]:
+def subgroup_regression_by_family(
+    df: pd.DataFrame,
+    target: str = "band_gap",
+    features: Optional[list[str]] = None,
+    min_n: int = 15,
+) -> list[dict]:
     """
-    Run OLS within coarse material families, defined by the dominant cation
-    element derived from the target formula.
-
-    Families are assembled by counting elements in the formula string and
-    taking the first capital-letter token as a proxy for the cation.
+    Run per-family OLS for *target*.  Families are inferred from the first
+    recognisable element in the target formula.
     """
+    if features is None:
+        features = FEATURE_COLS
     df = df.copy()
     df["material_family"] = df["target_formula"].apply(_infer_family)
 
     results = []
     for family, gdf in df.groupby("material_family"):
-        if gdf["perf_norm"].notna().sum() < 20:
+        sub = gdf.dropna(subset=[target] + features)
+        if len(sub) < min_n:
             continue
-        res = run_ols(gdf, label=f"family={family}")
+        res = run_ols(gdf, target=target, features=features, label=f"family={family}")
         res["group_key"] = family
         results.append(res)
     return results
 
 
-def _infer_family(formula: str) -> str:
-    """
-    Map a chemical formula to a broad material family based on the first
-    capital-letter element token.  Returns 'Other' if unparseable.
-    """
-    if not formula:
-        return "Other"
-
-    # Element symbols are one uppercase letter optionally followed by lowercase
-    elements = re.findall(r"[A-Z][a-z]?", formula)
-    if not elements:
-        return "Other"
-
-    # Map first element to broad families
-    _FAMILY_MAP = {
-        "Li": "Li-ion",
-        "Na": "Na-ion",
-        "K": "K-ion",
-        "Ba": "Perovskite/BaTiO3",
-        "Sr": "Perovskite/SrTiO3",
-        "La": "Lanthanide oxide",
-        "Y": "Yttrium oxide",
-        "Bi": "Bismuth oxide",
-        "Zn": "ZnO family",
-        "Ti": "Titanate",
-        "Fe": "Iron oxide",
-        "Mn": "Manganese oxide",
-        "Co": "Cobalt oxide",
-        "Ni": "Nickel oxide",
-        "Cu": "Copper oxide",
-        "Al": "Aluminate",
-        "Si": "Silicate",
-        "Zr": "Zirconate",
-        "Ce": "Ceria",
-        "Ca": "Calcium compound",
-    }
-    return _FAMILY_MAP.get(elements[0], "Other")
-
-
 def feature_importance_ranking(ols_result: dict) -> pd.DataFrame:
-    """
-    Rank complexity features by absolute standardised coefficient
-    from a fitted OLS result.
-    """
+    """Rank features by absolute standardised coefficient."""
     sdf = ols_result.get("summary_df", pd.DataFrame())
     if sdf.empty:
         return sdf
@@ -249,3 +230,22 @@ def feature_importance_ranking(ols_result: dict) -> pd.DataFrame:
     return sub.sort_values("abs_coef", ascending=False).reset_index(drop=True)
 
 
+def _infer_family(formula: str) -> str:
+    """Coarse material-family label from the first element in the formula."""
+    if not formula:
+        return "Other"
+    elements = re.findall(r"[A-Z][a-z]?", formula)
+    if not elements:
+        return "Other"
+    _FAMILY_MAP = {
+        "Li": "Li-ion (Li)", "Na": "Na-ion (Na)", "K": "Alkali (K)",
+        "Ba": "Ba-titanate", "Sr": "Sr-titanate", "Pb": "Pb-perovskite",
+        "La": "La-oxide",    "Y": "Y-oxide",      "Ce": "Ce-oxide",
+        "Bi": "Bi-oxide",    "Zn": "ZnO family",  "Ti": "Titanate",
+        "Fe": "Fe-oxide",    "Mn": "Mn-oxide",    "Co": "Co-oxide",
+        "Ni": "Ni-oxide",    "Cu": "Cu-oxide",    "Al": "Aluminate",
+        "Si": "Silicate",    "Zr": "Zirconate",   "Ca": "Ca-compound",
+        "Mg": "Mg-compound", "In": "In-oxide",    "Ga": "Ga-oxide",
+        "Nd": "Nd-compound", "Sm": "Sm-compound",
+    }
+    return _FAMILY_MAP.get(elements[0], "Other")

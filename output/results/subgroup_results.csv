@@ -1,0 +1,7 @@
+label,n,r_squared,adj_r_squared
+metric=capacity,0,,
+metric=conductivity,0,,
+metric=density,22,0.4898291661355215,0.33040078055287203
+metric=rel_density,21,0.39217062891230003,0.18956083854973338
+metric=resistivity,0,,
+metric=surface_area,21,0.6929149247535948,0.5905532330047931

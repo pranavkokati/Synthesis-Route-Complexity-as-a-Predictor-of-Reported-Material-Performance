@@ -1,0 +1,13 @@
+model,feature,coefficient
+naive,nsites,0.24711910529223807
+naive,nelements,-0.3735691535166507
+entropy,ce_entropy,0.23340352071172502
+entropy,n_distinct_envs,-0.8693274627268641
+entropy,dominance,-0.7908073784443149
+entropy,gini,0.3583846562240685
+full,ce_entropy,0.6217811217740223
+full,n_distinct_envs,-1.045140592166415
+full,dominance,-0.639061304536713
+full,gini,0.40337129558420914
+full,nsites,0.18554896938777407
+full,nelements,-0.5069370523626621

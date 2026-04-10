@@ -221,3 +221,159 @@
 16:07:15 [INFO] src.coord_env — Progress: 700/4500  (1.6/s)  ETA 39 min  errors: 5
 16:08:07 [INFO] src.coord_env — Progress: 800/4500  (1.7/s)  ETA 37 min  errors: 7
 16:08:10 [INFO] src.coord_env — Saved 800 new results to cache (errors: 7)
+16:09:00 [INFO] src.coord_env — Progress: 900/4500  (1.7/s)  ETA 36 min  errors: 8
+16:09:58 [INFO] src.coord_env — Progress: 1000/4500  (1.7/s)  ETA 35 min  errors: 9
+16:10:15 [INFO] src.coord_env — Saved 1000 new results to cache (errors: 9)
+16:11:10 [INFO] src.coord_env — Progress: 1100/4500  (1.6/s)  ETA 34 min  errors: 10
+16:12:13 [INFO] src.coord_env — Progress: 1200/4500  (1.6/s)  ETA 33 min  errors: 12
+16:12:19 [INFO] src.coord_env — Saved 1200 new results to cache (errors: 12)
+16:13:06 [INFO] src.coord_env — Progress: 1300/4500  (1.7/s)  ETA 32 min  errors: 14
+16:13:57 [INFO] src.coord_env — Progress: 1400/4500  (1.7/s)  ETA 31 min  errors: 14
+16:14:03 [INFO] src.coord_env — Saved 1400 new results to cache (errors: 14)
+20:39:48 [INFO] main — ============================================================
+20:39:48 [INFO] main — STEP 1 — Materials Project download
+20:39:48 [INFO] main — ============================================================
+20:40:07 [INFO] src.mp_downloader — Querying MP for metadata: 2–6 elements, 4–80 sites ...
+20:40:52 [INFO] main — ============================================================
+20:40:52 [INFO] main — STEP 1 — Materials Project download
+20:40:52 [INFO] main — ============================================================
+20:40:58 [INFO] src.mp_downloader — Querying MP for metadata: 2–6 elements, 4–80 sites ...
+20:41:43 [INFO] main — ============================================================
+20:41:43 [INFO] main — STEP 1 — Materials Project download
+20:41:43 [INFO] main — ============================================================
+20:41:49 [INFO] src.mp_downloader — Cache has 4500 records (≥ 4500 needed) — skipping metadata query.
+20:41:49 [INFO] src.mp_downloader — Loading existing structure cache from data/mp_structures_cache.json
+20:41:50 [INFO] src.mp_downloader — Cache contains 4500 structures
+20:41:50 [INFO] src.mp_downloader — Need to fetch 0 structures from MP (already cached: 4500)
+20:41:53 [INFO] src.mp_downloader — Final dataset: 4500 records | access date: 2026-04-10T15:59:11.099574+00:00
+20:41:53 [INFO] main — MP dataset ready: 4500 structures | class dist: {0: 1500, 1: 1500, 2: 1500}
+20:41:53 [INFO] main — ============================================================
+20:41:53 [INFO] main — STEP 2 — ChemEnv coordination entropy
+20:41:53 [INFO] main — ============================================================
+20:41:53 [INFO] src.coord_env — Cache has 1400 CE results
+20:41:53 [INFO] src.coord_env — 3100 structures pending; 1400 already cached
+20:41:54 [INFO] src.coord_env — Launching ChemEnv: 8 workers × 3100 structures (timeout=120s)
+20:42:29 [INFO] src.coord_env — Progress: 100/3100  (2.8/s)  ETA 18 min  errors: 2
+20:43:00 [INFO] src.coord_env — Progress: 200/3100  (3.0/s)  ETA 16 min  errors: 6
+20:43:06 [INFO] src.coord_env — Saved 200 new results to cache (errors: 6)
+20:43:43 [INFO] src.coord_env — Progress: 300/3100  (2.7/s)  ETA 17 min  errors: 7
+20:44:20 [INFO] src.coord_env — Progress: 400/3100  (2.7/s)  ETA 17 min  errors: 8
+20:44:24 [INFO] src.coord_env — Saved 400 new results to cache (errors: 8)
+20:44:58 [INFO] src.coord_env — Progress: 500/3100  (2.7/s)  ETA 16 min  errors: 10
+20:45:34 [INFO] src.coord_env — Progress: 600/3100  (2.7/s)  ETA 15 min  errors: 10
+20:45:37 [INFO] src.coord_env — Saved 600 new results to cache (errors: 10)
+20:46:09 [INFO] src.coord_env — Progress: 700/3100  (2.7/s)  ETA 15 min  errors: 13
+20:46:52 [INFO] src.coord_env — Progress: 800/3100  (2.7/s)  ETA 14 min  errors: 15
+20:46:56 [INFO] src.coord_env — Saved 800 new results to cache (errors: 15)
+20:47:23 [INFO] src.coord_env — Progress: 900/3100  (2.7/s)  ETA 13 min  errors: 17
+20:47:56 [INFO] src.coord_env — Progress: 1000/3100  (2.8/s)  ETA 13 min  errors: 19
+20:48:02 [INFO] src.coord_env — Saved 1000 new results to cache (errors: 19)
+20:48:31 [INFO] src.coord_env — Progress: 1100/3100  (2.8/s)  ETA 12 min  errors: 21
+20:49:06 [INFO] src.coord_env — Progress: 1200/3100  (2.8/s)  ETA 11 min  errors: 23
+20:49:12 [INFO] src.coord_env — Saved 1200 new results to cache (errors: 24)
+20:49:35 [INFO] src.coord_env — Progress: 1300/3100  (2.8/s)  ETA 11 min  errors: 25
+20:50:03 [INFO] src.coord_env — Progress: 1400/3100  (2.9/s)  ETA 10 min  errors: 28
+20:50:13 [INFO] src.coord_env — Saved 1400 new results to cache (errors: 28)
+20:50:34 [INFO] src.coord_env — Progress: 1500/3100  (2.9/s)  ETA 9 min  errors: 29
+20:51:09 [INFO] src.coord_env — Progress: 1600/3100  (2.9/s)  ETA 9 min  errors: 30
+20:51:25 [INFO] src.coord_env — Saved 1600 new results to cache (errors: 30)
+20:51:50 [INFO] src.coord_env — Progress: 1700/3100  (2.9/s)  ETA 8 min  errors: 30
+20:52:28 [INFO] src.coord_env — Progress: 1800/3100  (2.8/s)  ETA 8 min  errors: 31
+20:52:40 [INFO] src.coord_env — Saved 1800 new results to cache (errors: 32)
+20:53:02 [INFO] src.coord_env — Progress: 1900/3100  (2.8/s)  ETA 7 min  errors: 32
+20:53:41 [INFO] src.coord_env — Progress: 2000/3100  (2.8/s)  ETA 6 min  errors: 33
+20:53:54 [INFO] src.coord_env — Saved 2000 new results to cache (errors: 34)
+20:54:16 [INFO] src.coord_env — Progress: 2100/3100  (2.8/s)  ETA 6 min  errors: 35
+20:54:53 [INFO] src.coord_env — Progress: 2200/3100  (2.8/s)  ETA 5 min  errors: 38
+20:55:09 [INFO] src.coord_env — Saved 2200 new results to cache (errors: 39)
+20:55:09 [INFO] src.coord_env — Saved 2200 new results to cache (errors: 40)
+20:55:31 [INFO] src.coord_env — Progress: 2300/3100  (2.8/s)  ETA 5 min  errors: 41
+20:56:06 [INFO] src.coord_env — Progress: 2400/3100  (2.8/s)  ETA 4 min  errors: 42
+20:56:23 [INFO] src.coord_env — Saved 2400 new results to cache (errors: 42)
+20:56:49 [INFO] src.coord_env — Progress: 2500/3100  (2.8/s)  ETA 4 min  errors: 43
+20:57:32 [INFO] src.coord_env — Progress: 2600/3100  (2.8/s)  ETA 3 min  errors: 43
+20:57:49 [INFO] src.coord_env — Saved 2600 new results to cache (errors: 44)
+20:58:08 [INFO] src.coord_env — Progress: 2700/3100  (2.8/s)  ETA 2 min  errors: 44
+20:58:39 [INFO] src.coord_env — Progress: 2800/3100  (2.8/s)  ETA 2 min  errors: 44
+20:58:56 [INFO] src.coord_env — Saved 2800 new results to cache (errors: 45)
+20:59:12 [INFO] src.coord_env — Progress: 2900/3100  (2.8/s)  ETA 1 min  errors: 46
+20:59:46 [INFO] src.coord_env — Progress: 3000/3100  (2.8/s)  ETA 1 min  errors: 49
+21:00:01 [INFO] src.coord_env — Saved 3000 new results to cache (errors: 49)
+21:00:23 [INFO] src.coord_env — Progress: 3100/3100  (2.8/s)  ETA 0 min  errors: 49
+21:00:23 [INFO] src.coord_env — ChemEnv complete: 3051 succeeded, 49 errors in 1110 s (2.75/s avg)
+21:00:23 [INFO] src.coord_env — Merged dataset: 4451 structures with CE descriptors
+21:00:23 [INFO] main — CE dataset ready: 4451 structures with entropy descriptors
+21:00:23 [INFO] main — Dataset saved → results/dataset_with_entropy.csv
+21:00:23 [INFO] main — ============================================================
+21:00:23 [INFO] main — STEP 3 — Statistical analysis
+21:00:23 [INFO] main — ============================================================
+21:00:25 [INFO] src.analysis — Analysis dataset: 4451 structures
+21:00:25 [INFO] src.analysis — Class stats:
+     label    n     mean       sd
+    Stable 1500 1.103764 0.547957
+Metastable 1486 1.090121 0.610952
+  Unstable 1465 1.042294 0.670046
+21:00:25 [INFO] src.analysis — ANOVA (ce_entropy): F=4.12, p=1.63e-02, η²=0.0018
+21:00:25 [INFO] src.analysis — Spearman ρ(ce_entropy, ehull)=-0.0390  p=9.25e-03
+21:00:25 [INFO] src.analysis — Logistic regression dataset: n=4451 (synth=1593, non=2858)
+21:00:28 [INFO] src.analysis — Model naive     AUC=0.6075 [0.5909–0.6250]  pseudo-R²=-0.0385
+21:00:30 [INFO] src.analysis — Model entropy   AUC=0.6226 [0.6071–0.6394]  pseudo-R²=-0.0033
+21:00:32 [INFO] src.analysis — Model full      AUC=0.6878 [0.6734–0.7034]  pseudo-R²=0.0316
+21:00:33 [INFO] src.analysis — Composition-corrected entropy: 4451 structures
+21:00:33 [INFO] src.analysis — Composition-corrected ANOVA: F=7.06  p=8.68e-04  η²=0.0032
+21:00:33 [INFO] src.analysis — Subgroup ANOVA: 7 crystal systems
+21:00:33 [INFO] src.analysis — Pettifor analysis: 4 bins
+21:00:33 [INFO] main — Saved → results/class_stats.csv  (3 rows)
+21:00:33 [INFO] main — Saved → results/anova_results.csv  (4 rows)
+21:00:33 [INFO] main — Saved → results/tukey_hsd.csv  (3 rows)
+21:00:33 [INFO] main — Saved → results/logreg_coefficients.csv  (12 rows)
+21:00:33 [INFO] main — Saved → results/composition_anova.csv  (1 rows)
+21:00:33 [INFO] main — Saved → results/crystal_system_anova.csv  (7 rows)
+21:00:33 [INFO] main — Saved → results/pettifor_anova.csv  (4 rows)
+21:00:33 [INFO] main — Saved → results/element_entropy.csv  (85 rows)
+21:00:33 [INFO] main — Saved → results/roc_summary.csv  (3 rows)
+21:00:33 [INFO] main — -------------------------------------------------------
+21:00:33 [INFO] main — KEY FINDINGS
+21:00:33 [INFO] main — -------------------------------------------------------
+21:00:33 [INFO] main —   Stable        n= 1500  H̄=1.1038 ± 0.5480 (nats)
+21:00:33 [INFO] main —   Metastable    n= 1486  H̄=1.0901 ± 0.6110 (nats)
+21:00:33 [INFO] main —   Unstable      n= 1465  H̄=1.0423 ± 0.6700 (nats)
+21:00:33 [INFO] main —   ANOVA ce_entropy: F=4.12  p=1.63e-02  η²=0.0018  p_adj=2.18e-02  *
+21:00:33 [INFO] main —   Spearman ρ(entropy, ehull): -0.0390  p=9.25e-03
+21:00:33 [INFO] main —   ROC naive     AUC=0.6075 [0.5909–0.6250]  pseudo-R²=-0.0385
+21:00:33 [INFO] main —   ROC entropy   AUC=0.6226 [0.6071–0.6394]  pseudo-R²=-0.0033
+21:00:33 [INFO] main —   ROC full      AUC=0.6878 [0.6734–0.7034]  pseudo-R²=0.0316
+21:00:33 [INFO] main —   Composition-corrected ANOVA: F=7.06  p=8.68e-04  η²=0.0032
+21:00:33 [INFO] main —   Crystal-system subgroup results:
+21:00:33 [INFO] main —     Hexagonal         n=  342  F=   26.29  p=2.42e-11  η²=0.1343
+21:00:33 [INFO] main —     Tetragonal        n=  572  F=   21.13  p=1.41e-09  η²=0.0691
+21:00:33 [INFO] main —     Orthorhombic      n=  963  F=   34.41  p=3.68e-15  η²=0.0669
+21:00:33 [INFO] main —     Cubic             n=  621  F=   12.42  p=5.17e-06  η²=0.0386
+21:00:33 [INFO] main —     Triclinic         n=  566  F=    9.36  p=1.00e-04  η²=0.0322
+21:00:33 [INFO] main —     Monoclinic        n= 1038  F=   11.35  p=1.33e-05  η²=0.0215
+21:00:33 [INFO] main —     Trigonal          n=  349  F=    2.70  p=6.87e-02  η²=0.0154
+21:00:33 [INFO] main —   Pettifor chemical-diversity subgroups:
+21:00:33 [INFO] main —     Q4 (diverse)          n= 1073  F=   11.22  p=1.51e-05  η²=0.0205
+21:00:33 [INFO] main —     Q2                    n= 1087  F=    0.39  p=6.74e-01  η²=0.0007
+21:00:33 [INFO] main —     Q3                    n= 1151  F=    0.33  p=7.17e-01  η²=0.0006
+21:00:33 [INFO] main —     Q1 (similar)          n= 1140  F=    0.11  p=8.94e-01  η²=0.0002
+21:00:33 [INFO] main — -------------------------------------------------------
+21:00:33 [INFO] main — ============================================================
+21:00:33 [INFO] main — STEP 4 — Figure generation
+21:00:33 [INFO] main — ============================================================
+21:00:34 [INFO] src.visualization — Saved → figures/fig1_violin.png
+21:00:34 [INFO] src.visualization — Saved → figures/fig2_roc.png
+21:00:35 [INFO] src.visualization — Saved → figures/fig3_periodic_table.png
+21:00:36 [INFO] src.visualization — Saved → figures/fig4_scatter.png
+21:00:36 [INFO] src.visualization — Saved → figures/fig5_subgroups.png
+21:00:36 [INFO] main — Figure → figures/fig1_violin.png
+21:00:36 [INFO] main — Figure → figures/fig2_roc.png
+21:00:36 [INFO] main — Figure → figures/fig3_periodic_table.png
+21:00:36 [INFO] main — Figure → figures/fig4_scatter.png
+21:00:36 [INFO] main — Figure → figures/fig5_subgroups.png
+21:00:36 [INFO] main — ============================================================
+21:00:36 [INFO] main — PIPELINE COMPLETE
+21:00:36 [INFO] main — ============================================================
+21:00:36 [INFO] main — Figures  → figures/
+21:00:36 [INFO] main — Results  → results/
+21:00:36 [INFO] main — Log      → pipeline.log

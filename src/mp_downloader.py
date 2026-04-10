@@ -31,26 +31,47 @@ from mp_api.client import MPRester
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Resilience patch: sub-rester heartbeat endpoints can return non-JSON in
-# some network environments.  Wrap _get_database_version to degrade gracefully.
+# Resilience patch: heartbeat endpoints return non-JSON in some environments.
+# Patch both MPRester.get_emmet_version and BaseRester._get_database_version
+# to degrade gracefully instead of crashing.
 # ---------------------------------------------------------------------------
 def _patch_mp_api():
+    import requests as _req
+    from functools import cache as _cache
+    from packaging import version as _version
+
+    # --- patch get_emmet_version on MPRester ---
     try:
-        from mp_api.client.core.client import BaseRester
-        import requests as _req
-        from functools import cache as _cache
+        from mp_api.client.mprester import MPRester as _MPR
+
+        @staticmethod  # type: ignore[misc]
+        @_cache
+        def _safe_emmet_version(endpoint):
+            try:
+                r = _req.get(url=endpoint + "heartbeat", timeout=15)
+                v = r.json().get("version", "0.0.0")
+                return _version.parse(v)
+            except Exception:
+                return _version.parse("0.0.0")
+
+        _MPR.get_emmet_version = _safe_emmet_version
+    except Exception:
+        pass
+
+    # --- patch _get_database_version on BaseRester ---
+    try:
+        from mp_api.client.core.client import BaseRester as _BR
 
         @staticmethod  # type: ignore[misc]
         @_cache
         def _safe_db_version(endpoint):
             try:
                 r = _req.get(url=endpoint + "heartbeat", timeout=15)
-                data = r.json()
-                return data.get("db_version", "unknown")
+                return r.json().get("db_version", "unknown")
             except Exception:
                 return "unknown"
 
-        BaseRester._get_database_version = _safe_db_version
+        _BR._get_database_version = _safe_db_version
     except Exception:
         pass
 
@@ -155,54 +176,76 @@ def download_structures(
     rng = np.random.default_rng(seed)
 
     # ------------------------------------------------------------------
-    # Phase 1 — lightweight metadata scan (no structure objects)
+    # Fast-path: if the cache already has enough full-structure records,
+    # skip the metadata query (which can fail with 503 in some network
+    # environments) and use the cached IDs directly.
     # ------------------------------------------------------------------
-    logger.info(
-        "Querying MP for metadata: %d–%d elements, %d–%d sites ...",
-        *num_elements, *num_sites,
-    )
-    try:
-        MPRester.get_emmet_version.cache_clear()
-    except AttributeError:
-        pass
-
-    with MPRester(api_key) as mpr:
-        meta_docs = mpr.materials.summary.search(
-            num_elements=num_elements,
-            num_sites=num_sites,
-            fields=["material_id", "energy_above_hull", "theoretical"],
-            all_fields=False,
-        )
-
-    logger.info("Retrieved %d metadata records", len(meta_docs))
-
-    # NOTE: use `is not None` guard — 0.0 is falsy, so `val or default` would
-    #       misclassify all stable structures (ehull=0) as unstable.
-    meta = pd.DataFrame([{
-        "material_id":       d.material_id,
-        "energy_above_hull": _ehull_safe(d.energy_above_hull),
-        "theoretical":       d.theoretical,
-        "synth_class":       synthesizability_class(_ehull_safe(d.energy_above_hull)),
-    } for d in meta_docs])
-
-    class_counts = meta["synth_class"].value_counts().sort_index()
-    logger.info("Full dataset class distribution: %s", class_counts.to_dict())
-
-    # ------------------------------------------------------------------
-    # Phase 2 — stratified sampling
-    # ------------------------------------------------------------------
+    _sufficient_cache = False
     sampled_ids: list[str] = []
-    for cls in [0, 1, 2]:
-        pool = meta[meta["synth_class"] == cls]["material_id"].tolist()
-        n_sample = min(n_per_class, len(pool))
-        if n_sample == 0:
-            logger.warning("No structures available for class %d", cls)
-            continue
-        chosen = rng.choice(pool, size=n_sample, replace=False).tolist()
-        sampled_ids.extend(chosen)
-        logger.info("Class %d: sampling %d / %d", cls, n_sample, len(pool))
 
-    logger.info("Total sampled: %d structures", len(sampled_ids))
+    if cache_path.exists():
+        with open(cache_path, encoding="utf-8") as _fh:
+            _peek = json.load(_fh)
+        _cached_recs = _peek.get("records", {})
+        _n_needed = n_per_class * 3
+        if len(_cached_recs) >= _n_needed:
+            # Reconstruct sampled_ids from existing cache (all cached IDs)
+            sampled_ids = list(_cached_recs.keys())
+            _sufficient_cache = True
+            logger.info(
+                "Cache has %d records (≥ %d needed) — skipping metadata query.",
+                len(_cached_recs), _n_needed,
+            )
+
+    if not _sufficient_cache:
+        # ------------------------------------------------------------------
+        # Phase 1 — lightweight metadata scan (no structure objects)
+        # ------------------------------------------------------------------
+        logger.info(
+            "Querying MP for metadata: %d–%d elements, %d–%d sites ...",
+            *num_elements, *num_sites,
+        )
+        try:
+            MPRester.get_emmet_version.cache_clear()
+        except AttributeError:
+            pass
+
+        with MPRester(api_key) as mpr:
+            meta_docs = mpr.materials.summary.search(
+                num_elements=num_elements,
+                num_sites=num_sites,
+                fields=["material_id", "energy_above_hull", "theoretical"],
+                all_fields=False,
+            )
+
+        logger.info("Retrieved %d metadata records", len(meta_docs))
+
+        # NOTE: use `is not None` guard — 0.0 is falsy, so `val or default`
+        #       misclassifies all stable structures (ehull=0) as unstable.
+        meta = pd.DataFrame([{
+            "material_id":       d.material_id,
+            "energy_above_hull": _ehull_safe(d.energy_above_hull),
+            "theoretical":       d.theoretical,
+            "synth_class":       synthesizability_class(_ehull_safe(d.energy_above_hull)),
+        } for d in meta_docs])
+
+        class_counts = meta["synth_class"].value_counts().sort_index()
+        logger.info("Full dataset class distribution: %s", class_counts.to_dict())
+
+        # ------------------------------------------------------------------
+        # Phase 2 — stratified sampling
+        # ------------------------------------------------------------------
+        for cls in [0, 1, 2]:
+            pool = meta[meta["synth_class"] == cls]["material_id"].tolist()
+            n_sample = min(n_per_class, len(pool))
+            if n_sample == 0:
+                logger.warning("No structures available for class %d", cls)
+                continue
+            chosen = rng.choice(pool, size=n_sample, replace=False).tolist()
+            sampled_ids.extend(chosen)
+            logger.info("Class %d: sampling %d / %d", cls, n_sample, len(pool))
+
+        logger.info("Total sampled: %d structures", len(sampled_ids))
 
     # ------------------------------------------------------------------
     # Phase 3 — load or download full structures (with caching)

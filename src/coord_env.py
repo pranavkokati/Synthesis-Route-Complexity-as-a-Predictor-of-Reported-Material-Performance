@@ -1,21 +1,22 @@
 """
 Coordination environment entropy computation.
 
-For each pymatgen Structure, uses ChemEnv (LocalGeometryFinder +
-SimplestChemenvStrategy) to classify every atomic site into one of ~30
-coordination environment types (CE symbols such as O:6, T:4, C:12, ...).
+For each pymatgen Structure, classifies every atomic site into one of ~30
+coordination environment (CE) types using ChemEnv (LocalGeometryFinder +
+SimplestChemenvStrategy), then derives four structural complexity descriptors:
 
-Descriptors computed per structure
------------------------------------
-ce_entropy      : Shannon entropy H = −Σ p_i log(p_i) of CE-symbol frequencies
-n_distinct_envs : number of unique CE symbols present
-dominance       : fraction of most-common CE symbol
-gini            : Gini coefficient of CE-symbol frequency distribution
-ce_symbols      : JSON string of {symbol: count} dict (for downstream use)
+  ce_entropy       Shannon entropy H = −Σ p_i log(p_i) of CE-symbol frequencies
+  n_distinct_envs  Number of unique CE symbols present across all sites
+  dominance        Fraction of sites occupied by the most common CE type
+  gini             Gini coefficient of CE-symbol frequency distribution
+                   (0 = perfectly uniform; approaches 1 = fully dominated)
+
+CE symbols use pymatgen notation, e.g. O:6 (octahedral), T:4 (tetrahedral),
+C:12 (cuboctahedral), L:2 (linear).
 
 Parallel processing is handled by concurrent.futures.ProcessPoolExecutor.
-Per-structure timeout is enforced via a wrapper signal approach (Linux only).
-Results are cached to data/coord_entropy_results.csv.
+Per-structure wall-clock timeout is enforced via SIGALRM on Linux.
+Results are cached incrementally to data/coord_entropy_results.csv.
 """
 
 import json
@@ -32,8 +33,9 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
+
 # ---------------------------------------------------------------------------
-# Timeout sentinel
+# Timeout helpers (Linux SIGALRM)
 # ---------------------------------------------------------------------------
 
 class _TimeoutError(Exception):
@@ -45,24 +47,23 @@ def _timeout_handler(signum, frame):
 
 
 # ---------------------------------------------------------------------------
-# Core per-structure computation (runs in worker process)
+# Worker function — runs in a subprocess
 # ---------------------------------------------------------------------------
 
-def _compute_one(args):
+def _compute_one(args: tuple) -> dict | None:
     """
     Compute CE descriptors for a single structure.
 
     Parameters
     ----------
-    args : tuple of (material_id: str, structure_dict: dict, timeout_s: int)
+    args : (material_id: str, structure_dict: dict, timeout_s: int)
 
     Returns
     -------
-    dict with material_id + descriptor fields, or None on failure
+    dict with descriptor fields, or dict with ``_error`` key on failure.
     """
     material_id, struct_dict, timeout_s = args
 
-    # Set per-process alarm (Linux only)
     if hasattr(signal, "SIGALRM"):
         signal.signal(signal.SIGALRM, _timeout_handler)
         signal.alarm(timeout_s)
@@ -88,7 +89,6 @@ def _compute_one(args):
             maximum_distance_factor=1.41,
             only_cations=False,
         )
-
         strategy = SimplestChemenvStrategy(
             distance_cutoff=1.4,
             angle_cutoff=0.3,
@@ -98,52 +98,51 @@ def _compute_one(args):
             structure_environments=se,
         )
 
-        # Collect CE symbols across all sites
+        # Tally CE symbols across all sites (take highest-csm candidate)
         ce_counts: dict[str, int] = {}
         for site_envs in lse.coordination_environments:
             if not site_envs:
                 continue
-            # Each site may have multiple CE candidates; take the best (index 0)
             best = site_envs[0].get("ce_symbol", "UNKNOWN")
             ce_counts[best] = ce_counts.get(best, 0) + 1
 
         if not ce_counts:
-            return None
+            return {"material_id": material_id, "_error": "no_ce_assigned"}
 
         total = sum(ce_counts.values())
-        probs = [v / total for v in ce_counts.values()]
+        probs = sorted(v / total for v in ce_counts.values())  # ascending
 
-        # Shannon entropy (nats → bits optional, keep nats)
+        # Shannon entropy (nats)
         ce_entropy = -sum(p * math.log(p) for p in probs if p > 0)
 
-        n_distinct_envs = len(ce_counts)
-        dominance = max(probs)
+        n_distinct = len(ce_counts)
+        dominance = probs[-1]  # largest probability
 
-        # Gini coefficient
-        sorted_p = sorted(probs)
-        n = len(sorted_p)
+        # Gini coefficient — Lorenz curve area formula
+        # G = (2/n) * Σ_{i=1}^n i*p_i - (n+1)/n  (p sorted ascending, 1-indexed)
+        n = len(probs)
         if n == 1:
             gini = 0.0
         else:
-            cumsum = 0.0
-            gini_num = 0.0
-            for i, p in enumerate(sorted_p):
-                gini_num += (2 * (i + 1) - n - 1) * p
-            gini = gini_num / (n * sum(sorted_p))
+            weighted_sum = sum((i + 1) * p for i, p in enumerate(probs))
+            gini = (2.0 * weighted_sum / n) - (n + 1) / n
+            # Normalise to [0, 1] range for any n
+            gini = max(0.0, min(1.0, gini))
 
         return {
-            "material_id":    material_id,
-            "ce_entropy":     ce_entropy,
-            "n_distinct_envs": n_distinct_envs,
-            "dominance":      dominance,
-            "gini":           gini,
-            "ce_symbols":     json.dumps(ce_counts),
+            "material_id":     material_id,
+            "ce_entropy":      ce_entropy,
+            "n_distinct_envs": n_distinct,
+            "dominance":       dominance,
+            "gini":            gini,
+            "ce_symbols":      json.dumps(ce_counts),
+            "n_sites_ce":      total,
         }
 
     except _TimeoutError:
         return {"material_id": material_id, "_error": "timeout"}
     except Exception as exc:
-        return {"material_id": material_id, "_error": str(exc)[:200]}
+        return {"material_id": material_id, "_error": str(exc)[:300]}
     finally:
         if hasattr(signal, "SIGALRM"):
             signal.alarm(0)
@@ -158,73 +157,82 @@ def compute_coord_entropy(
     cache_path: str | Path = "data/coord_entropy_results.csv",
     n_workers: int | None = None,
     timeout_per_structure: int = 120,
-    chunk_save_every: int = 200,
+    save_every: int = 200,
 ) -> pd.DataFrame:
     """
     Compute coordination-environment entropy descriptors for all structures.
 
+    Structures already present in ``cache_path`` are skipped.  Results are
+    saved incrementally every ``save_every`` completions to guard against
+    interruptions.
+
     Parameters
     ----------
-    df                      : DataFrame with columns 'material_id' and 'structure'
-                              (pymatgen Structure objects).
-    cache_path              : CSV file for caching / incremental saves.
-    n_workers               : worker processes (default: min(8, cpu_count)).
-    timeout_per_structure   : per-structure wall-clock timeout in seconds.
-    chunk_save_every        : save cache after this many completed structures.
+    df                    : DataFrame with ``material_id`` + ``structure``
+                            columns (pymatgen Structure objects).
+    cache_path            : CSV output / cache file.
+    n_workers             : worker processes (default: min(8, cpu_count)).
+    timeout_per_structure : per-structure wall-clock timeout in seconds.
+    save_every            : save after this many newly completed structures.
 
     Returns
     -------
-    pd.DataFrame joined back to input df columns (minus 'structure').
+    pd.DataFrame — input df columns (minus ``structure``) joined with
+    CE descriptor columns.
     """
     cache_path = Path(cache_path)
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
 
+    # ------------------------------------------------------------------
     # Load existing cache
+    # ------------------------------------------------------------------
     if cache_path.exists():
         cached = pd.read_csv(cache_path, dtype={"material_id": str})
-        logger.info("Cache contains %d CE results", len(cached))
         done_ids = set(cached["material_id"].tolist())
+        logger.info("Cache has %d CE results", len(cached))
     else:
         cached = pd.DataFrame()
         done_ids = set()
 
-    # Filter to structures that need processing
-    todo = df[
+    # ------------------------------------------------------------------
+    # Filter to pending structures
+    # ------------------------------------------------------------------
+    pending = df[
         df["material_id"].notna() &
         df["structure"].notna() &
         ~df["material_id"].isin(done_ids)
     ][["material_id", "structure"]].copy()
 
     logger.info(
-        "%d structures to process (%d already cached)",
-        len(todo), len(done_ids),
+        "%d structures pending; %d already cached",
+        len(pending), len(done_ids),
     )
 
     new_rows: list[dict] = []
     error_count = 0
 
-    if len(todo) > 0:
+    if len(pending) > 0:
         if n_workers is None:
-            n_workers = min(8, (os.cpu_count() or 4))
+            n_workers = min(8, os.cpu_count() or 4)
 
-        # Build args list: (material_id, struct_dict, timeout)
         args_list = [
             (row.material_id, row.structure.as_dict(), timeout_per_structure)
-            for row in todo.itertuples()
+            for row in pending.itertuples()
             if row.structure is not None
         ]
 
         logger.info(
-            "Starting parallel ChemEnv computation: %d workers, %d structures",
-            n_workers, len(args_list),
+            "Launching ChemEnv: %d workers × %d structures (timeout=%ds)",
+            n_workers, len(args_list), timeout_per_structure,
         )
         t0 = time.time()
 
         with ProcessPoolExecutor(max_workers=n_workers) as pool:
-            futures = {pool.submit(_compute_one, a): a[0] for a in args_list}
-            completed = 0
+            fut_map = {pool.submit(_compute_one, a): a[0] for a in args_list}
+            n_total = len(fut_map)
 
-            for fut in as_completed(futures):
-                mid = futures[fut]
+            for done_count, fut in enumerate(as_completed(fut_map), start=1):
+                mid = fut_map[fut]
                 try:
                     result = fut.result()
                 except Exception as exc:
@@ -234,62 +242,65 @@ def compute_coord_entropy(
                     error_count += 1
                 elif "_error" in result:
                     error_count += 1
-                    logger.debug("Error for %s: %s", result["material_id"], result["_error"])
+                    logger.debug(
+                        "CE error [%s]: %s", result["material_id"], result["_error"]
+                    )
                 else:
                     new_rows.append(result)
 
-                completed += 1
-                if completed % 100 == 0:
+                if done_count % 100 == 0:
                     elapsed = time.time() - t0
-                    rate = completed / elapsed if elapsed > 0 else 0
-                    remaining = (len(args_list) - completed) / rate if rate > 0 else 0
+                    rate = done_count / elapsed if elapsed > 0 else 1
+                    eta_min = (n_total - done_count) / rate / 60
                     logger.info(
-                        "Progress: %d/%d (%.1f/s) — ETA %.0f min",
-                        completed, len(args_list), rate, remaining / 60,
+                        "Progress: %d/%d  (%.1f/s)  ETA %.0f min  errors: %d",
+                        done_count, n_total, rate, eta_min, error_count,
                     )
 
-                # Incremental save
-                if len(new_rows) > 0 and len(new_rows) % chunk_save_every == 0:
-                    _append_cache(new_rows, cached, cache_path)
+                if new_rows and len(new_rows) % save_every == 0:
+                    cached = _write_cache(new_rows, cached, cache_path)
                     logger.info(
-                        "Intermediate save: %d new results (errors so far: %d)",
+                        "Saved %d new results to cache (errors: %d)",
                         len(new_rows), error_count,
                     )
 
-        elapsed_total = time.time() - t0
+        total_time = time.time() - t0
         logger.info(
-            "ChemEnv done: %d succeeded, %d errors/timeouts in %.1f s",
-            len(new_rows), error_count, elapsed_total,
+            "ChemEnv complete: %d succeeded, %d errors in %.0f s (%.2f/s avg)",
+            len(new_rows), error_count, total_time,
+            len(new_rows) / total_time if total_time > 0 else 0,
         )
 
     # Final save
     if new_rows:
-        _append_cache(new_rows, cached, cache_path)
+        cached = _write_cache(new_rows, cached, cache_path)
 
-    # Reload full cache
-    if cache_path.exists():
-        full_cache = pd.read_csv(cache_path, dtype={"material_id": str})
-    else:
-        full_cache = pd.DataFrame(new_rows) if new_rows else pd.DataFrame()
+    # ------------------------------------------------------------------
+    # Merge CE descriptors back onto input df
+    # ------------------------------------------------------------------
+    full_cache = (
+        pd.read_csv(cache_path, dtype={"material_id": str})
+        if cache_path.exists() else
+        (pd.DataFrame(new_rows) if new_rows else pd.DataFrame())
+    )
 
-    # Merge back with input df (drop structure column to keep df slim)
     meta_cols = [c for c in df.columns if c != "structure"]
     merged = df[meta_cols].merge(full_cache, on="material_id", how="inner")
 
     logger.info(
-        "Merged dataset: %d records with CE descriptors", len(merged)
+        "Merged dataset: %d structures with CE descriptors", len(merged)
     )
     return merged
 
 
-def _append_cache(
+def _write_cache(
     new_rows: list[dict],
     existing: pd.DataFrame,
-    cache_path: Path,
+    path: Path,
 ) -> pd.DataFrame:
-    """Append new_rows to cache file."""
+    """Append new rows to cache CSV, deduplicating on material_id."""
     new_df = pd.DataFrame(new_rows)
     combined = pd.concat([existing, new_df], ignore_index=True)
     combined = combined.drop_duplicates(subset=["material_id"], keep="last")
-    combined.to_csv(cache_path, index=False)
+    combined.to_csv(path, index=False)
     return combined

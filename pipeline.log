@@ -164,3 +164,5 @@
 15:35:17 [INFO] src.coord_env — Progress: 200/12000  (1.0/s)  ETA 188 min  errors: 0
 15:35:17 [INFO] src.coord_env — Saved 200 new results to cache (errors: 0)
 15:36:42 [INFO] src.coord_env — Progress: 300/12000  (1.1/s)  ETA 180 min  errors: 0
+15:38:10 [INFO] src.coord_env — Progress: 400/12000  (1.1/s)  ETA 176 min  errors: 0
+15:38:10 [INFO] src.coord_env — Saved 400 new results to cache (errors: 0)

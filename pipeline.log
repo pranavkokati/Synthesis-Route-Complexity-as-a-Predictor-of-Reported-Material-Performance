@@ -166,3 +166,58 @@
 15:36:42 [INFO] src.coord_env — Progress: 300/12000  (1.1/s)  ETA 180 min  errors: 0
 15:38:10 [INFO] src.coord_env — Progress: 400/12000  (1.1/s)  ETA 176 min  errors: 0
 15:38:10 [INFO] src.coord_env — Saved 400 new results to cache (errors: 0)
+15:39:17 [INFO] src.coord_env — Progress: 500/12000  (1.2/s)  ETA 165 min  errors: 0
+15:40:09 [INFO] src.coord_env — Progress: 600/12000  (1.2/s)  ETA 153 min  errors: 0
+15:40:09 [INFO] src.coord_env — Saved 600 new results to cache (errors: 0)
+15:41:02 [INFO] src.coord_env — Progress: 700/12000  (1.3/s)  ETA 144 min  errors: 0
+15:41:58 [INFO] src.coord_env — Progress: 800/12000  (1.4/s)  ETA 138 min  errors: 0
+15:41:58 [INFO] src.coord_env — Saved 800 new results to cache (errors: 0)
+15:42:59 [INFO] src.coord_env — Progress: 900/12000  (1.4/s)  ETA 134 min  errors: 0
+15:58:08 [INFO] main — ============================================================
+15:58:08 [INFO] main — STEP 1 — Materials Project download
+15:58:08 [INFO] main — ============================================================
+15:58:21 [INFO] src.mp_downloader — Querying MP for metadata: 2–6 elements, 4–80 sites ...
+15:59:10 [INFO] src.mp_downloader — Retrieved 138615 metadata records
+15:59:10 [INFO] src.mp_downloader — Full dataset class distribution: {0: 31355, 1: 61235, 2: 46025}
+15:59:10 [INFO] src.mp_downloader — Class 0: sampling 1500 / 31355
+15:59:11 [INFO] src.mp_downloader — Class 1: sampling 1500 / 61235
+15:59:11 [INFO] src.mp_downloader — Class 2: sampling 1500 / 46025
+15:59:11 [INFO] src.mp_downloader — Total sampled: 4500 structures
+15:59:11 [INFO] src.mp_downloader — Need to fetch 4500 structures from MP (already cached: 0)
+15:59:11 [INFO] src.mp_downloader — Fetching chunk 1/9 (500 IDs) ...
+15:59:15 [INFO] src.mp_downloader — Cache saved: 500 records total
+15:59:15 [INFO] src.mp_downloader — Fetching chunk 2/9 (500 IDs) ...
+15:59:18 [INFO] src.mp_downloader — Cache saved: 1000 records total
+15:59:18 [INFO] src.mp_downloader — Fetching chunk 3/9 (500 IDs) ...
+15:59:23 [INFO] src.mp_downloader — Cache saved: 1500 records total
+15:59:23 [INFO] src.mp_downloader — Fetching chunk 4/9 (500 IDs) ...
+15:59:27 [INFO] src.mp_downloader — Cache saved: 2000 records total
+15:59:27 [INFO] src.mp_downloader — Fetching chunk 5/9 (500 IDs) ...
+15:59:33 [INFO] src.mp_downloader — Cache saved: 2500 records total
+15:59:33 [INFO] src.mp_downloader — Fetching chunk 6/9 (500 IDs) ...
+15:59:38 [INFO] src.mp_downloader — Cache saved: 3000 records total
+15:59:38 [INFO] src.mp_downloader — Fetching chunk 7/9 (500 IDs) ...
+15:59:44 [INFO] src.mp_downloader — Cache saved: 3500 records total
+15:59:44 [INFO] src.mp_downloader — Fetching chunk 8/9 (500 IDs) ...
+15:59:50 [INFO] src.mp_downloader — Cache saved: 4000 records total
+15:59:50 [INFO] src.mp_downloader — Fetching chunk 9/9 (500 IDs) ...
+15:59:56 [INFO] src.mp_downloader — Cache saved: 4500 records total
+16:00:00 [INFO] src.mp_downloader — Final dataset: 4500 records | access date: 2026-04-10T15:59:11.099574+00:00
+16:00:01 [INFO] main — MP dataset ready: 4500 structures | class dist: {0: 1500, 1: 1500, 2: 1500}
+16:00:01 [INFO] main — ============================================================
+16:00:01 [INFO] main — STEP 2 — ChemEnv coordination entropy
+16:00:01 [INFO] main — ============================================================
+16:00:01 [INFO] src.coord_env — 4500 structures pending; 0 already cached
+16:00:03 [INFO] src.coord_env — Launching ChemEnv: 8 workers × 4500 structures (timeout=120s)
+16:01:07 [INFO] src.coord_env — Progress: 100/4500  (1.6/s)  ETA 47 min  errors: 2
+16:02:11 [INFO] src.coord_env — Progress: 200/4500  (1.6/s)  ETA 46 min  errors: 2
+16:02:12 [INFO] src.coord_env — Saved 200 new results to cache (errors: 2)
+16:03:06 [INFO] src.coord_env — Progress: 300/4500  (1.6/s)  ETA 43 min  errors: 3
+16:04:05 [INFO] src.coord_env — Progress: 400/4500  (1.7/s)  ETA 41 min  errors: 4
+16:04:09 [INFO] src.coord_env — Saved 400 new results to cache (errors: 4)
+16:05:03 [INFO] src.coord_env — Progress: 500/4500  (1.7/s)  ETA 40 min  errors: 5
+16:06:09 [INFO] src.coord_env — Progress: 600/4500  (1.6/s)  ETA 40 min  errors: 5
+16:06:17 [INFO] src.coord_env — Saved 600 new results to cache (errors: 5)
+16:07:15 [INFO] src.coord_env — Progress: 700/4500  (1.6/s)  ETA 39 min  errors: 5
+16:08:07 [INFO] src.coord_env — Progress: 800/4500  (1.7/s)  ETA 37 min  errors: 7
+16:08:10 [INFO] src.coord_env — Saved 800 new results to cache (errors: 7)

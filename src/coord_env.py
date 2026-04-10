@@ -30,6 +30,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+# numpy is also needed for the shuffle rng above
 
 logger = logging.getLogger(__name__)
 
@@ -220,6 +221,11 @@ def compute_coord_entropy(
             for row in pending.itertuples()
             if row.structure is not None
         ]
+        # Shuffle so all synthesizability classes are interleaved from the
+        # start; this ensures intermediate cache saves contain a representative
+        # mix of classes and intermediate analyses are meaningful.
+        rng_shuffle = np.random.default_rng(seed=0)
+        rng_shuffle.shuffle(args_list)
 
         logger.info(
             "Launching ChemEnv: %d workers × %d structures (timeout=%ds)",

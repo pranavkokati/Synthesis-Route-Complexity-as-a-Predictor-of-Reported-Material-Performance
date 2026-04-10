@@ -1,302 +1,265 @@
+#!/usr/bin/env python3
 """
-main.py — Synthesis Route Complexity as a Predictor of Reported Material Performance
-=====================================================================================
+Information Entropy of Local Coordination Environments Predicts Synthesizability
+=================================================================================
 
-Pipeline:
-    1. Load the Kononova et al. solid-state synthesis dataset (31 K recipes)
-    2. Extract five operationally defined synthesis complexity features
-    3. Query the Materials Project API for real DFT-computed properties
-       (band_gap, formation_energy_per_atom, energy_above_hull, density)
-    4. Merge synthesis complexity features with MP properties
-    5. Multivariate OLS regression for each MP property
-    6. Pearson correlation matrix + VIF diagnostics
-    7. Subgroup OLS by material family
-    8. Publication-quality figures
+Full pipeline:
+    1. Download stratified crystal structures from Materials Project
+    2. Compute Shannon entropy of coordination environment distributions
+    3. Run statistical analyses (ANOVA, logistic regression, composition control)
+    4. Generate all five figures
+    5. Save summary tables to results/
 
-Usage:
-    python main.py [--data PATH] [--output DIR] [--mp-key KEY]
+Usage
+-----
+    python main.py --api-key YOUR_KEY [options]
 
-Environment variables:
-    MP_API_KEY — Materials Project API key
+Options
+-------
+    --api-key          Materials Project API key (required)
+    --n-per-class      Structures per synthesizability class (default: 4000)
+    --workers          Parallel worker processes for ChemEnv (default: 8)
+    --cache-dir        Directory for JSON/CSV caches (default: data/)
+    --fig-dir          Figure output directory (default: figures/)
+    --results-dir      Results tables output directory (default: results/)
+    --seed             Random seed (default: 42)
+    --skip-download    Skip MP download, use existing cache
+    --skip-chemenv     Skip ChemEnv computation, use existing CSV cache
+    --timeout          Per-structure ChemEnv timeout in seconds (default: 120)
+    --log-level        Logging level: DEBUG/INFO/WARNING (default: INFO)
 """
 
 import argparse
 import logging
-import os
 import sys
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s  %(levelname)-8s  %(name)s — %(message)s",
-    datefmt="%H:%M:%S",
-    handlers=[logging.StreamHandler(sys.stdout)],
-)
-logger = logging.getLogger("main")
 
-
-def parse_args() -> argparse.Namespace:
+def parse_args():
     p = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+        description="CE Entropy vs Synthesizability pipeline",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    p.add_argument("--data",   default="data/solid_state_synthesis.json")
-    p.add_argument("--output", default="output")
-    p.add_argument("--mp-key", default=None, help="Materials Project API key (overrides env)")
-    p.add_argument("--log-level", default="INFO", choices=["DEBUG","INFO","WARNING"])
+    p.add_argument("--api-key", required=True,
+                   help="Materials Project API key")
+    p.add_argument("--n-per-class", type=int, default=4000,
+                   help="Target structures per synthesizability class")
+    p.add_argument("--workers", type=int, default=8,
+                   help="Parallel ChemEnv worker processes")
+    p.add_argument("--cache-dir", default="data",
+                   help="Directory for intermediate caches")
+    p.add_argument("--fig-dir", default="figures",
+                   help="Directory for output figures")
+    p.add_argument("--results-dir", default="results",
+                   help="Directory for result tables")
+    p.add_argument("--seed", type=int, default=42)
+    p.add_argument("--skip-download", action="store_true",
+                   help="Load existing MP cache instead of downloading")
+    p.add_argument("--skip-chemenv", action="store_true",
+                   help="Load existing ChemEnv CSV cache instead of computing")
+    p.add_argument("--timeout", type=int, default=120,
+                   help="Per-structure ChemEnv timeout (seconds)")
+    p.add_argument("--log-level", default="INFO",
+                   choices=["DEBUG", "INFO", "WARNING", "ERROR"])
     return p.parse_args()
 
 
-def main() -> None:
+def setup_logging(level: str):
+    logging.basicConfig(
+        level=getattr(logging, level),
+        format="%(asctime)s [%(levelname)s] %(name)s — %(message)s",
+        datefmt="%H:%M:%S",
+        handlers=[
+            logging.StreamHandler(sys.stdout),
+            logging.FileHandler("pipeline.log", mode="a"),
+        ],
+    )
+
+
+def ensure_dirs(*dirs):
+    for d in dirs:
+        Path(d).mkdir(parents=True, exist_ok=True)
+
+
+def main():
     args = parse_args()
-    logging.getLogger().setLevel(args.log_level)
+    setup_logging(args.log_level)
+    logger = logging.getLogger("main")
 
-    mp_key = args.mp_key or os.environ.get("MP_API_KEY") or os.environ.get("MAPI_KEY")
-    if not mp_key:
-        logger.error(
-            "No Materials Project API key found. "
-            "Set MP_API_KEY or pass --mp-key."
-        )
-        sys.exit(1)
+    cache_dir   = Path(args.cache_dir)
+    fig_dir     = Path(args.fig_dir)
+    results_dir = Path(args.results_dir)
+    ensure_dirs(cache_dir, fig_dir, results_dir)
 
-    out_root = Path(args.output)
-    fig_dir  = out_root / "figures"
-    res_dir  = out_root / "results"
-    fig_dir.mkdir(parents=True, exist_ok=True)
-    res_dir.mkdir(parents=True, exist_ok=True)
+    mp_cache   = cache_dir / "mp_structures_cache.json"
+    ce_cache   = cache_dir / "coord_entropy_results.csv"
 
-    # ------------------------------------------------------------------
-    # Step 1 — Load dataset
-    # ------------------------------------------------------------------
+    # -----------------------------------------------------------------------
+    # Step 1: Download or load MP structures
+    # -----------------------------------------------------------------------
     logger.info("=" * 60)
-    logger.info("STEP 1  Loading dataset")
+    logger.info("STEP 1: Materials Project download")
     logger.info("=" * 60)
 
-    from src.data_loader import load_dataset, parse_reactions
-    reactions = load_dataset(args.data)
-    df_raw    = parse_reactions(reactions)
+    from src.mp_downloader import download_structures
 
-    # ------------------------------------------------------------------
-    # Step 2 — Complexity features
-    # ------------------------------------------------------------------
-    logger.info("=" * 60)
-    logger.info("STEP 2  Computing complexity features")
-    logger.info("=" * 60)
+    if args.skip_download and mp_cache.exists():
+        logger.info("--skip-download set; loading existing MP cache from %s", mp_cache)
+        # We still need the DataFrame; call download_structures which will
+        # return immediately from cache for already-fetched IDs.
 
-    from src.feature_extractor import compute_features, get_feature_summary, FEATURE_COLS
-    df       = compute_features(df_raw)
-    summary  = get_feature_summary(df)
-    logger.info("\n%s", summary.to_string())
-    summary.to_csv(res_dir / "feature_summary.csv")
-
-    # ------------------------------------------------------------------
-    # Step 3 — Materials Project query
-    # ------------------------------------------------------------------
-    logger.info("=" * 60)
-    logger.info("STEP 3  Querying Materials Project API")
-    logger.info("=" * 60)
-
-    from src.materials_project import fetch_mp_properties
-    unique_formulas = df["target_formula"].dropna().unique().tolist()
-    mp_df = fetch_mp_properties(
-        formulas=unique_formulas,
-        api_key=mp_key,
-        cache_path="data/mp_properties_cache.json",
+    df_mp = download_structures(
+        api_key=args.api_key,
+        n_per_class=args.n_per_class,
+        cache_path=mp_cache,
+        seed=args.seed,
     )
-    mp_df.to_csv(res_dir / "mp_properties.csv", index=False)
-    logger.info("MP properties retrieved for %d unique formulas", len(mp_df))
 
-    # ------------------------------------------------------------------
-    # Step 4 — Merge
-    # ------------------------------------------------------------------
-    logger.info("=" * 60)
-    logger.info("STEP 4  Merging synthesis features with MP properties")
-    logger.info("=" * 60)
-
-    df_merged = df.merge(mp_df, left_on="target_formula", right_on="formula", how="inner")
     logger.info(
-        "Merged dataset: %d records (%.1f%% of full dataset)",
-        len(df_merged), 100.0 * len(df_merged) / len(df),
+        "MP dataset: %d structures | class dist: %s",
+        len(df_mp),
+        df_mp["synth_class"].value_counts().sort_index().to_dict(),
     )
 
-    from src.analysis import MP_PROPERTIES
-    for prop, label in MP_PROPERTIES.items():
-        n = df_merged[prop].notna().sum() if prop in df_merged.columns else 0
-        logger.info("  %-35s : %d records", label, n)
-
-    df_merged.to_csv(res_dir / "merged_dataset.csv", index=False)
-
-    # ------------------------------------------------------------------
-    # Step 5 — OLS regressions
-    # ------------------------------------------------------------------
+    # -----------------------------------------------------------------------
+    # Step 2: Compute or load coordination environment entropy
+    # -----------------------------------------------------------------------
     logger.info("=" * 60)
-    logger.info("STEP 5  Multivariate OLS — one model per MP property")
+    logger.info("STEP 2: Coordination environment entropy computation")
     logger.info("=" * 60)
 
-    from src.analysis import (
-        run_all_property_regressions,
-        compute_correlation_matrix,
-        compute_vif,
-        subgroup_regression_by_family,
-        feature_importance_ranking,
+    from src.coord_env import compute_coord_entropy
+
+    df_ce = compute_coord_entropy(
+        df=df_mp,
+        cache_path=ce_cache,
+        n_workers=args.workers,
+        timeout_per_structure=args.timeout,
     )
 
-    ols_results = run_all_property_regressions(df_merged)
+    logger.info(
+        "CE dataset: %d structures with entropy descriptors",
+        len(df_ce),
+    )
 
-    all_summaries = []
-    for prop, res in ols_results.items():
-        if res.get("model") is not None:
-            logger.info("\n%s", res["model"].summary())
-            res["summary_df"].to_csv(
-                res_dir / f"ols_{prop}.csv", index=False
+    # Save merged dataset
+    meta_cols = [c for c in df_ce.columns if c != "structure"]
+    df_ce[meta_cols].to_csv(results_dir / "dataset_with_entropy.csv", index=False)
+    logger.info("Saved full dataset to results/dataset_with_entropy.csv")
+
+    # -----------------------------------------------------------------------
+    # Step 3: Statistical analysis
+    # -----------------------------------------------------------------------
+    logger.info("=" * 60)
+    logger.info("STEP 3: Statistical analysis")
+    logger.info("=" * 60)
+
+    from src.analysis import run_analysis
+
+    results = run_analysis(df_ce)
+
+    # Save all tables
+    _save_table(results["class_stats"],      results_dir / "class_stats.csv")
+    _save_table(results["anova_table"],      results_dir / "anova_results.csv")
+    _save_table(results["tukey_table"],      results_dir / "tukey_hsd.csv")
+    _save_table(results["logreg_coef"],      results_dir / "logreg_coefficients.csv")
+    _save_table(results["composition_anova"],results_dir / "composition_corrected_anova.csv")
+    _save_table(results["subgroup_anova"],   results_dir / "subgroup_anova.csv")
+    _save_table(results["element_entropy"],  results_dir / "element_entropy.csv")
+
+    _print_summary(results, logger)
+
+    # -----------------------------------------------------------------------
+    # Step 4: Generate all figures
+    # -----------------------------------------------------------------------
+    logger.info("=" * 60)
+    logger.info("STEP 4: Figure generation")
+    logger.info("=" * 60)
+
+    from src.visualization import save_all
+
+    plot_df = results.get("_df_with_corrected", df_ce)
+    saved_figs = save_all(results, plot_df, fig_dir=fig_dir)
+
+    for p in saved_figs:
+        logger.info("Figure saved: %s", p)
+
+    # -----------------------------------------------------------------------
+    # Done
+    # -----------------------------------------------------------------------
+    logger.info("=" * 60)
+    logger.info("Pipeline complete.")
+    logger.info("Figures    → %s/", fig_dir)
+    logger.info("Results    → %s/", results_dir)
+    logger.info("Log file   → pipeline.log")
+    logger.info("=" * 60)
+
+
+def _save_table(df, path):
+    if df is not None and len(df) > 0:
+        df.to_csv(path, index=False)
+        logging.getLogger("main").info("Saved → %s", path)
+
+
+def _print_summary(results: dict, logger):
+    """Print key findings to console/log."""
+    logger.info("-" * 50)
+    logger.info("KEY FINDINGS")
+    logger.info("-" * 50)
+
+    cs = results.get("class_stats")
+    if cs is not None:
+        for _, row in cs.iterrows():
+            logger.info(
+                "  %s (class %d): n=%d  H̄=%.4f ± %.4f",
+                row["label"], row["synth_class"], row["n"],
+                row["mean_entropy"], row["sd_entropy"],
             )
-            all_summaries.append(res["summary_df"])
 
-    if all_summaries:
-        pd.concat(all_summaries).to_csv(res_dir / "ols_all_properties.csv", index=False)
-
-    # ------------------------------------------------------------------
-    # Step 6 — Correlation matrix + VIF
-    # ------------------------------------------------------------------
-    logger.info("=" * 60)
-    logger.info("STEP 6  Correlation matrix and VIF")
-    logger.info("=" * 60)
-
-    corr_df, pval_df = compute_correlation_matrix(df_merged)
-    corr_df.to_csv(res_dir / "correlation_matrix.csv")
-    pval_df.to_csv(res_dir / "pvalue_matrix.csv")
-    logger.info("\n%s", corr_df.to_string())
-
-    vif_df = compute_vif(df_merged)
-    vif_df.to_csv(res_dir / "vif.csv", index=False)
-    logger.info("\nVIF:\n%s", vif_df.to_string())
-
-    # Feature importance across all models (by mean |β|)
-    importance_rows = []
-    for prop, res in ols_results.items():
-        if res.get("model") is not None:
-            imp = feature_importance_ranking(res)
-            imp["mp_property"] = prop
-            importance_rows.append(imp)
-    if importance_rows:
-        imp_all = pd.concat(importance_rows)
-        imp_all.to_csv(res_dir / "feature_importance_all.csv", index=False)
-
-        # Top feature per property
-        logger.info("\nTop predictor per MP property:")
-        for prop, res in ols_results.items():
-            if res.get("model") is not None:
-                imp = feature_importance_ranking(res)
-                if not imp.empty:
-                    top = imp.iloc[0]
-                    logger.info(
-                        "  %-35s  top=%s  β=%+.4f  p=%.4f",
-                        MP_PROPERTIES[prop],
-                        top["feature_label"],
-                        top["coefficient"],
-                        top["p_value"],
-                    )
-
-    # Determine the single most predictive feature (highest mean |β| across models)
-    if importance_rows:
-        imp_agg = (
-            imp_all[imp_all["feature"] != "const"]
-            .groupby("feature")["abs_coef"]
-            .mean()
-            .sort_values(ascending=False)
-        )
-        top_feature = imp_agg.index[0]
-        logger.info("Most predictive feature overall: %s", top_feature)
-    else:
-        top_feature = FEATURE_COLS[0]
-
-    # ------------------------------------------------------------------
-    # Step 7 — Subgroup regressions
-    # ------------------------------------------------------------------
-    logger.info("=" * 60)
-    logger.info("STEP 7  Subgroup regressions by material family")
-    logger.info("=" * 60)
-
-    # Use band_gap as the primary subgroup target (most data); fall back to best covered
-    primary_target = next(
-        (p for p in ["band_gap", "formation_energy_per_atom", "energy_above_hull", "density"]
-         if p in df_merged.columns and df_merged[p].notna().sum() >= 30),
-        None,
-    )
-
-    sub_family = []
-    if primary_target:
-        sub_family = subgroup_regression_by_family(df_merged, target=primary_target)
-        sg_rows = [{"label": r["label"], "n": r["n"], "r_squared": r["r_squared"],
-                    "adj_r_squared": r.get("adj_r_squared", np.nan),
-                    "target": r["target"]} for r in sub_family]
-        pd.DataFrame(sg_rows).to_csv(res_dir / "subgroup_results.csv", index=False)
-
-    # ------------------------------------------------------------------
-    # Step 8 — Figures
-    # ------------------------------------------------------------------
-    logger.info("=" * 60)
-    logger.info("STEP 8  Generating figures")
-    logger.info("=" * 60)
-
-    from src.visualization import (
-        plot_feature_distributions,
-        plot_correlation_heatmap,
-        plot_property_scatter,
-        plot_all_regression_coefficients,
-        plot_subgroup_results,
-        plot_mp_property_distributions,
-    )
-
-    plot_feature_distributions(df, fig_dir)
-    plot_correlation_heatmap(corr_df, pval_df, fig_dir)
-    plot_property_scatter(df_merged, top_feature, fig_dir)
-    plot_all_regression_coefficients(ols_results, fig_dir)
-
-    if sub_family and primary_target:
-        plot_subgroup_results(
-            sub_family,
-            target_label=MP_PROPERTIES.get(primary_target, primary_target),
-            out_dir=fig_dir,
+    at = results.get("anova_table")
+    if at is not None and len(at):
+        row = at.iloc[0]
+        logger.info(
+            "  ANOVA ce_entropy: F=%.2f, p=%.2e, η²=%.4f",
+            row["F_stat"], row["p_value"], row["eta_squared"],
         )
 
-    plot_mp_property_distributions(df_merged, fig_dir)
+    sp = results.get("spearman", {})
+    if sp:
+        logger.info(
+            "  Spearman(ce_entropy, e_hull): ρ=%.4f, p=%.2e",
+            sp.get("rho", float("nan")), sp.get("pval", float("nan")),
+        )
 
-    # ------------------------------------------------------------------
-    # Final summary
-    # ------------------------------------------------------------------
-    logger.info("=" * 60)
-    logger.info("PIPELINE COMPLETE")
-    logger.info("=" * 60)
+    roc = results.get("roc_data", {})
+    if roc.get("auc"):
+        logger.info(
+            "  Binary logistic AUC: %.4f [%.4f–%.4f]",
+            roc["auc"], roc.get("ci_low", roc["auc"]), roc.get("ci_high", roc["auc"]),
+        )
 
-    print("\n" + "=" * 65)
-    print("RESULTS SUMMARY")
-    print("=" * 65)
-    print(f"  Full dataset size             : {len(df):,} recipes")
-    print(f"  MP-matched records (merged)   : {len(df_merged):,} ({100.0*len(df_merged)/len(df):.1f}%)")
-    print()
+    ca = results.get("composition_anova")
+    if ca is not None and len(ca):
+        row = ca.iloc[0]
+        logger.info(
+            "  Composition-corrected ANOVA: F=%.2f, p=%.2e, η²=%.4f",
+            row["F_stat"], row["p_value"], row["eta_squared"],
+        )
 
-    for prop, label in MP_PROPERTIES.items():
-        if prop not in df_merged.columns:
-            continue
-        n  = df_merged[prop].notna().sum()
-        res = ols_results.get(prop, {})
-        r2  = res.get("r_squared", np.nan)
-        print(f"  [{label}]")
-        print(f"    n = {n:,}   R² = {r2:.4f}" if np.isfinite(r2) else f"    n = {n:,}")
-        sdf = res.get("summary_df", pd.DataFrame())
-        if not sdf.empty:
-            sig = sdf[(sdf["significant"]) & (sdf["feature"] != "const")]
-            if not sig.empty:
-                for _, row in sig.iterrows():
-                    print(f"    ** {row['feature_label']:<38s} β={row['coefficient']:+.4f}  p={row['p_value']:.4f}")
-        print()
+    sa = results.get("subgroup_anova")
+    if sa is not None and len(sa):
+        logger.info("  Subgroup ANOVA (crystal systems):")
+        for _, row in sa.sort_values("eta_squared", ascending=False).iterrows():
+            sig = "*" if row["p_value"] < 0.05 else " "
+            logger.info(
+                "    %s %-15s n=%5d  F=%8.2f  p=%.2e  η²=%.4f",
+                sig, row["crystal_system"], row["n"],
+                row["F_stat"], row["p_value"], row["eta_squared"],
+            )
 
-    print(f"  Figures  → {fig_dir.resolve()}")
-    print(f"  Results  → {res_dir.resolve()}")
-    print("=" * 65)
+    logger.info("-" * 50)
 
 
 if __name__ == "__main__":

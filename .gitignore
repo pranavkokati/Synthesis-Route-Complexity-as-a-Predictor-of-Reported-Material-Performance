@@ -1,9 +1,5 @@
 __pycache__/
 *.pyc
-*.pyo
-*.pyd
-.Python
-.env
-data/
-*.json
-*.json.xz
+data/*.json
+data/*.csv
+!data/.gitkeep

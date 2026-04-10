@@ -30,6 +30,7 @@ Analyses
    - ANOVA within each quartile
 """
 
+import ast
 import json
 import logging
 from collections import defaultdict
@@ -52,6 +53,26 @@ logger = logging.getLogger(__name__)
 CLASS_NAMES = {0: "Stable", 1: "Metastable", 2: "Unstable"}
 DESCRIPTOR_COLS = ["ce_entropy", "n_distinct_envs", "dominance", "gini"]
 CONTROL_COLS = ["nsites", "nelements"]
+
+
+# ---------------------------------------------------------------------------
+# Utility helpers
+# ---------------------------------------------------------------------------
+
+def _parse_elements(val) -> list[str]:
+    """Parse element list from any format: list, JSON string, or Python repr."""
+    if isinstance(val, list):
+        return [str(e) for e in val]
+    if isinstance(val, str):
+        # Try JSON first (double-quoted), then Python repr (single-quoted)
+        for parser in (json.loads, ast.literal_eval):
+            try:
+                result = parser(val)
+                if isinstance(result, list):
+                    return [str(e) for e in result]
+            except Exception:
+                pass
+    return []
 
 
 # ---------------------------------------------------------------------------
@@ -158,10 +179,14 @@ def _fit_logit(
     y: np.ndarray,
     seed: int = 42,
 ) -> tuple[LogisticRegression, np.ndarray]:
-    """Fit logistic regression and return (model, y_prob)."""
-    clf = LogisticRegression(
-        max_iter=2000, solver="lbfgs", class_weight="balanced", random_state=seed,
-    )
+    """Fit logistic regression and return (model, y_prob).
+
+    No class_weight balancing: balanced weighting shifts predicted
+    probabilities away from the empirical marginal, making McFadden R²
+    undefined relative to the intercept-only null.  AUC is invariant to
+    class balance, so this choice does not affect the primary metric.
+    """
+    clf = LogisticRegression(max_iter=2000, solver="lbfgs", random_state=seed)
     clf.fit(X, y)
     return clf, clf.predict_proba(X)[:, 1]
 
@@ -189,12 +214,7 @@ def _pettifor_descriptors(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
     spans, means = [], []
     for _, row in df.iterrows():
-        elems = row.get("elements", [])
-        if isinstance(elems, str):
-            try:
-                elems = json.loads(elems)
-            except Exception:
-                elems = []
+        elems = _parse_elements(row.get("elements", []))
         nums = _mendeleev_numbers(elems)
         if nums:
             spans.append(max(nums) - min(nums))
@@ -220,13 +240,7 @@ def _element_entropy_table(df: pd.DataFrame) -> pd.DataFrame:
     for _, row in df.iterrows():
         if pd.isna(row.get("ce_entropy")):
             continue
-        elems = row.get("elements", [])
-        if isinstance(elems, str):
-            try:
-                elems = json.loads(elems)
-            except Exception:
-                elems = []
-        for el in elems:
+        for el in _parse_elements(row.get("elements", [])):
             elem_vals[el].append(float(row["ce_entropy"]))
 
     return pd.DataFrame([
@@ -252,12 +266,9 @@ def _composition_corrected_entropy(
     structures containing that element.  This removes the compositional
     confound (simple elements form simple structures).
     """
-    elems = row.get("elements", [])
-    if isinstance(elems, str):
-        try:
-            elems = json.loads(elems)
-        except Exception:
-            return None
+    elems = _parse_elements(row.get("elements", []))
+    if not elems:
+        return None
     baselines = [el_map[e] for e in elems if e in el_map]
     if not baselines:
         return None
